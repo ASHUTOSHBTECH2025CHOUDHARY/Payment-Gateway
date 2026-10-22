@@ -1,204 +1,184 @@
 # Payment Gateway Service
 
-> Process payments, refunds and settlements with Stripe — a production-style
-> payment gateway built on **Java 26 / Spring Boot 4.1**, using DDD + Hexagonal
-> architecture, a transactional outbox to Kafka, and Redis-backed idempotency.
-
-[![CI Pipeline](https://github.com/lucasbemo/payment-gateway-service/actions/workflows/ci.yml/badge.svg)](https://github.com/lucasbemo/payment-gateway-service/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-![Java](https://img.shields.io/badge/Java-26-orange.svg)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1-brightgreen.svg)
-
-> ⚠️ **Security notice** — this is a learning/demo project. Default credentials
-> (`admin/admin`, `postgres/postgres`, …) are for local development **only**.
-> Never deploy as-is — see the [Security Guide](docs/SECURITY_GUIDE.md) before
-> running anywhere public.
-
----
-
-## Overview
-
-Payment Gateway Service is a backend that handles the full lifecycle of online
-payments: it authorizes and captures payments through **Stripe**, issues refunds,
-tracks transactions, manages merchants and customers, reconciles settlements, and
-delivers webhooks to merchants. Domain events are published reliably via a
-**transactional outbox** to Kafka, and every payment-like command is **idempotent**
-so retries never double-charge. It exists as a reference implementation of a
-clean, event-driven payment system using DDD and Hexagonal architecture.
+A production-style payment gateway built with **Java 26, Spring Boot 4.1, PostgreSQL, Apache Kafka, Redis, and Stripe**. Implements Domain-Driven Design (DDD), Hexagonal Architecture, transactional outbox messaging, and idempotent payment processing.
 
 ## Features
 
-- **Payments** — authorize, capture and process card payments via Stripe;
-  idempotent per `X-Idempotency-Key`. `POST /api/v1/payments`
-- **Refunds** — full and partial refunds against a payment. `…/api/v1/refunds`
-- **Transactions** — query and track the ledger of payment/refund movements.
-  `…/api/v1/transactions`
-- **Merchants** — register, update, suspend merchants and manage their
-  configuration. `…/api/v1/merchants`
-- **Customers** — manage customers and their tokenized payment methods.
-  `…/api/v1/customers`
-- **Reconciliation** — match a merchant's transactions for a UTC day against the
-  gateway; idempotent per merchant/gateway/date. `…/api/v1/reconciliation`
-- **Webhooks** — receive Stripe events and fan them out to merchant endpoints.
-  `…/api/v1/webhooks`
-- **Idempotency** — Redis + Redisson distributed locks guarantee exactly-once
-  processing of retryable commands.
-- **Transactional outbox → Kafka** — aggregates and their events are persisted in
-  one transaction, then published to Kafka by a poller (no lost or phantom events).
-- **Resilience** — Resilience4j (circuit breaker, retry, bulkhead, rate limiter)
-  and Bucket4j protect external calls and enforce per-merchant limits.
-- **Observability** — Micrometer + Prometheus metrics and Brave/Zipkin tracing
-  across business flows.
-
-See the [API Reference](docs/API_REFERENCE.md) for full request/response details.
+- **Payments:** Authorize and capture card payments through Stripe.
+- **Refunds:** Support full and partial refunds.
+- **Transactions:** Track payment and refund transactions.
+- **Merchants:** Register, update, and suspend merchants.
+- **Customers:** Manage customer profiles and tokenized payment methods.
+- **Reconciliation:** Reconcile merchant transactions against gateway records.
+- **Webhooks:** Process Stripe events and deliver notifications to merchants.
+- **Idempotency:** Use Redis and Redisson to coordinate retryable requests and prevent duplicate processing.
+- **Transactional Outbox:** Persist business changes and events atomically before publishing to Kafka.
+- **Resilience:** Implement retries, circuit breakers, bulkheads, and rate limiting.
+- **Observability:** Monitor metrics and distributed traces with Prometheus, Grafana, and Zipkin.
 
 ## Architecture
 
-The service follows **DDD + Hexagonal (Ports & Adapters)** with a strict
-dependency direction `infrastructure → application → domain`:
+The application follows Domain-Driven Design (DDD) and Hexagonal Architecture.
 
+```text
+┌─────────────────────────────────────────────┐
+│              DOMAIN LAYER                   │
+│ Payments, Refunds, Transactions, Merchants,  │
+│ Customers, Reconciliation, Outbox           │
+├─────────────────────────────────────────────┤
+│           APPLICATION LAYER                 │
+│ Use Cases, Commands, Responses, Ports        │
+├─────────────────────────────────────────────┤
+│          INFRASTRUCTURE LAYER               │
+│ REST APIs, Kafka, PostgreSQL, Redis, Stripe  │
+└─────────────────────────────────────────────┘
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│ DOMAIN — business core: rich entities & domain services          │
-│ payment · refund · transaction · merchant · customer ·           │
-│ reconciliation · outbox · idempotency                            │
-├──────────────────────────────────────────────────────────────────┤
-│ APPLICATION — use cases, commands / responses, ports             │
-├──────────────────────────────────────────────────────────────────┤
-│ INFRASTRUCTURE — REST & Kafka adapters, JPA, Stripe              │
-└──────────────────────────────────────────────────────────────────┘
-```
 
-The boundaries are enforced by an ArchUnit test (`HexagonalArchitectureTest`):
-the domain may not depend on application or infrastructure, and no cycles are
-allowed.
+Dependency direction: `Infrastructure → Application → Domain`
 
-| Area | Technology |
-|------|------------|
-| Language / build | Java **26**, Maven (`./mvnw`) |
-| Framework | Spring Boot **4.1.0** |
-| Persistence | PostgreSQL + Spring Data JPA/Hibernate, Flyway migrations |
-| Messaging | Spring Kafka (transactional outbox) |
-| Cache / locks | Redis + Redisson |
-| Resilience | Resilience4j + Bucket4j |
-| Payments | stripe-java |
-| API docs | springdoc-openapi (Swagger UI) |
-| Observability | Micrometer + Prometheus + Brave/Zipkin |
+Architecture boundaries are validated using ArchUnit tests.
+
+## Technology Stack
+
+| Category | Technology |
+|---|---|
+| Language | Java 26 |
+| Framework | Spring Boot 4.1 |
+| Build Tool | Maven |
+| Database | PostgreSQL |
+| ORM | Spring Data JPA, Hibernate |
+| Migrations | Flyway |
+| Messaging | Apache Kafka, Spring Kafka |
+| Cache and Locks | Redis, Redisson |
+| Payment Processing | Stripe Java SDK |
+| Resilience | Resilience4j, Bucket4j |
+| API Documentation | Springdoc OpenAPI, Swagger UI |
+| Monitoring | Micrometer, Prometheus, Grafana |
+| Distributed Tracing | Brave, Zipkin |
 | Testing | JUnit 5, Testcontainers, ArchUnit |
 
-Deeper design notes live in
-[Stripe Integration Architecture](docs/STRIPE_INTEGRATION_ARCHITECTURE.md),
-[Webhooks](docs/WEBHOOKS.md) and the [ADRs](docs/decisions/).
+## API Endpoints
 
-## Quick Start
+| Feature | Endpoint |
+|---|---|
+| Payments | `POST /api/v1/payments` |
+| Refunds | `/api/v1/refunds` |
+| Transactions | `/api/v1/transactions` |
+| Merchants | `/api/v1/merchants` |
+| Customers | `/api/v1/customers` |
+| Reconciliation | `/api/v1/reconciliation` |
+| Webhooks | `/api/v1/webhooks` |
 
-### Prerequisites
+## Prerequisites
 
-- **Java 26+** (Temurin 26 recommended)
-- **Docker & Docker Compose**
-- Maven is provided via the `./mvnw` wrapper
+- Java 26 or later
+- Docker and Docker Compose
+- Maven (Maven Wrapper included)
+- Stripe API credentials
 
-### 1. Clone
+## Getting Started
+
+### 1. Clone the Repository
 
 ```bash
-git clone git@github.com:lucasbemo/payment-gateway-service.git
+git clone <repository-url>
 cd payment-gateway-service
-cp .env.example .env        # adjust values as needed
 ```
 
-### 2. Start infrastructure
+### 2. Configure Environment Variables
 
 ```bash
-docker-compose up -d        # or: make docker-up
-# Postgres, Kafka, Redis, Prometheus, Grafana, Zipkin, MinIO, pgAdmin, Kafka UI
+cp .env.example .env
 ```
 
-### 3. Run the application
+Configure database, Kafka, Redis, and Stripe credentials in the environment file.
 
-```bash
-./mvnw spring-boot:run                 # or: make run  (profile: local)
-# or build a jar and run it (skip tests: `package` otherwise runs the
-# Testcontainers e2e suite, which needs the infra stack from step 2 and
-# can't share one JVM with the full test run — see `make build`)
-./mvnw clean package -DskipTests && java -jar target/*.jar
-```
+Example local configuration:
 
-### 4. Access
-
-| Service | URL | Credentials |
-|---------|-----|-------------|
-| API | http://localhost:8080 | — |
-| Swagger UI | http://localhost:8080/swagger-ui.html | — |
-| Health | http://localhost:8080/actuator/health | — |
-| pgAdmin | http://localhost:8083 | admin@admin.com / admin |
-| Kafka UI | http://localhost:8082 | — |
-| Grafana | http://localhost:3000 | admin / admin |
-| Prometheus | http://localhost:9090 | — |
-| Zipkin | http://localhost:9411 | — |
-
-### Configuration
-
-Configuration comes from environment variables (see `.env.example`). Key values
-and their local docker-compose defaults:
-
-```bash
-# Database (host port 5433)
+```properties
 DATASOURCE_URL=jdbc:postgresql://localhost:5433/payment_gateway
 DATASOURCE_USERNAME=admin
 DATASOURCE_PASSWORD=admin
 
-# Kafka (host port 19092)
 KAFKA_BOOTSTRAP_SERVERS=localhost:19092
 
-# Redis (host port 6380)
 REDIS_HOST=localhost
 REDIS_PORT=6380
 
-# Active Spring profile
 SPRING_PROFILES_ACTIVE=local
 ```
 
-**Profiles:** `local` (default — host-port defaults, no extra config),
-`dev` (used by the docker app container), `prod` (requires `DATASOURCE_URL` and
-the other secrets to be supplied via environment/secrets manager).
+### 3. Start Infrastructure
+
+```bash
+docker-compose up -d
+```
+
+This starts PostgreSQL, Kafka, Redis, Prometheus, Grafana, Zipkin, and the supporting development tools configured in Docker Compose.
+
+### 4. Run the Application
+
+```bash
+./mvnw spring-boot:run
+```
+
+Alternatively, build and run the JAR:
+
+```bash
+./mvnw clean package -DskipTests
+java -jar target/*.jar
+```
+
+### 5. Access the Services
+
+| Service | URL |
+|---|---|
+| API | http://localhost:8080 |
+| Swagger UI | http://localhost:8080/swagger-ui.html |
+| Health Check | http://localhost:8080/actuator/health |
+| Kafka UI | http://localhost:8082 |
+| Grafana | http://localhost:3000 |
+| Prometheus | http://localhost:9090 |
+| Zipkin | http://localhost:9411 |
+| pgAdmin | http://localhost:8083 |
+
+## Reliability and Data Consistency
+
+- **Idempotency:** Prevent duplicate processing of retried requests.
+- **Transactional Outbox:** Store business changes and domain events in one database transaction.
+- **Kafka Publishing:** Publish persisted events asynchronously.
+- **Distributed Locking:** Coordinate concurrent retryable operations using Redis and Redisson.
+- **Resilience Patterns:** Handle transient failures and protect external services.
+- **Reconciliation:** Detect discrepancies between merchant and gateway transaction records.
+
+## Monitoring and Observability
+
+- **Micrometer:** Instrument application metrics.
+- **Prometheus:** Collect metrics.
+- **Grafana:** Visualize monitoring dashboards.
+- **Zipkin:** Trace distributed requests.
+- **Kafka UI:** Inspect Kafka topics and messages.
+
+## Testing
+
+The project uses:
+
+- JUnit 5 for unit tests.
+- Testcontainers for integration testing.
+- ArchUnit for architecture validation.
+
+Run the tests:
+
+```bash
+./mvnw test
+```
+
+Integration and end-to-end tests may require the supporting infrastructure.
 
 ## Documentation
 
-Full documentation lives in [`docs/`](docs/README.md). Start here:
+Technical documentation is available in the `docs/` directory, covering API references, Stripe integration, webhooks, testing, security, deployment, troubleshooting, and architecture decisions.
 
-| Topic | Document |
-|-------|----------|
-| Getting started | [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) |
-| API reference | [docs/API_REFERENCE.md](docs/API_REFERENCE.md) · [error codes](docs/ERROR_CODES.md) |
-| Webhooks | [docs/WEBHOOKS.md](docs/WEBHOOKS.md) |
-| Testing | [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md) |
-| Security | [docs/SECURITY_GUIDE.md](docs/SECURITY_GUIDE.md) |
-| Deployment | [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) |
-| Development | [docs/DEVELOPMENT_GUIDE.md](docs/DEVELOPMENT_GUIDE.md) |
-| Troubleshooting | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) |
-| Architecture decisions | [docs/decisions/](docs/decisions/) |
+## Security
 
-## Contributing
-
-Contributions are welcome. This project is built with a **spec-driven,
-human-in-the-loop AI workflow** ([Claude Code](https://claude.com/claude-code)):
-every non-trivial change flows from a backlog item to an approved spec to an
-implementation, with explicit human approval gates at each step — so the intent
-is reviewed *before* any code is written.
-
-```
-GitHub Project item → /import-github-project-item <n>   (scaffold + enrich a spec)
-                    → human review & approval           (answer blocking questions)
-                    → /implement-feature <spec>          (plan → APPROVE → code in a worktree)
-                    → /spring-boot-review → /create-pr   (review → draft PR)
-                    → merge → /finish-feature <n>-<slug> (archive spec, clean up)
-```
-
-See **[GUIDE_WORKFLOW.md](docs/GUIDE_WORKFLOW.md)** for the full walkthrough and
-[CONTRIBUTING.md](CONTRIBUTING.md) for the branching model, Conventional Commits,
-and code style. The workflow is optional for one-off fixes, but it's how the
-backlog is delivered.
-
-## License
-
-Released under the [MIT License](LICENSE).
+This is a learning and development project. Configure secure credentials, protect API endpoints, validate webhook signatures, and manage secrets securely before deploying to a public or production environment.
